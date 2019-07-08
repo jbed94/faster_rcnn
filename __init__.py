@@ -1,3 +1,1 @@
-import src
-import scripts
-import datasets
+from .model import *
