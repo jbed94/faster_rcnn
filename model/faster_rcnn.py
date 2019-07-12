@@ -28,8 +28,8 @@ class FasterRCNN(tf.keras.Model):
 
     def __init__(self,
                  num_classes,
-                 frcnn_features=512,
-                 rpn_features=512,
+                 frcnn_features=256,
+                 rpn_features=256,
                  anchor_num_scales=3,
                  total_anchor_overlap_rate=0.9,
                  non_max_suppression_iou_threshold=0.7,
@@ -82,10 +82,7 @@ class FasterRCNN(tf.keras.Model):
         self.gap = tf.keras.layers.GlobalAveragePooling2D()
 
         # final features extraction and fast r-cnn predictions
-        self.extractor = tf.keras.Sequential([
-            tf.keras.layers.Conv2D(self.frcnn_features, 3, 2, 'same', activation='relu'),
-            self.gap
-        ])
+        self.extractor = tf.keras.layers.Dense(self.frcnn_features, 'relu')
         self.predict_class = tf.keras.layers.Dense(self.num_classes)
         self.predict_roi = tf.keras.layers.Dense(4)
 
@@ -156,6 +153,7 @@ class FasterRCNN(tf.keras.Model):
         # run roi align to extract object_features
         # size (example) [rois, 7, 7, 256]]
         object_features = self.roi(context_features, norm_rois, box_indices=image_assignments)
+        object_features = self.gap(object_features)
 
         # run final features extraction and predict classes and rois
         features = self.extractor(object_features)
@@ -168,7 +166,6 @@ class FasterRCNN(tf.keras.Model):
         if return_visual_representations:
             context_features = self.gap(context_features)
             context_features = tf.gather(context_features, image_assignments)
-            object_features = self.gap(object_features)
             visual_representations = tf.concat([context_features, object_features], -1)
 
         rpn_output = (rpn_predictions, rpn_rois)
