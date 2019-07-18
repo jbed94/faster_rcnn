@@ -198,3 +198,19 @@ class FasterRCNN(tf.keras.Model):
             'detection_lower_threshold': 0.3,
             'fine_tune_features_extraction': fine_tune
         }
+
+    @staticmethod
+    def clevr_spec(fine_tune=False):
+        return {
+            'num_classes': 96,
+            'frcnn_features': 512,
+            'rpn_features': 512,
+            'anchor_num_scales': 3,
+            'total_anchor_overlap_rate': 0.9,
+            'non_max_suppression_iou_threshold': 0.7,
+            'roi_align_output_size': (7, 7),
+            'roi_align_samples': 2,
+            'detection_upper_threshold': 0.7,
+            'detection_lower_threshold': 0.3,
+            'fine_tune_features_extraction': fine_tune
+        }
