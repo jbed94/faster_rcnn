@@ -205,7 +205,7 @@ def _prepare_features_anchors(output_shape, original_shape, anchor_templates):
     yx = tf.stack(tf.meshgrid(y, x), -1)
 
     # prepare y and x for many anchors per (super) pixel
-    yx = tf.tile(yx[:, :, tf.newaxis, :], [1, 1, len(anchor_templates), 1])
+    yx = tf.tile(yx[:, :, tf.newaxis, :], [1, 1, tf.shape(anchor_templates)[0], 1])
     yx = tf.cast(yx, tf.float32)
 
     # for each y, x prepare height and width of all the anchor templates (broadcast)
