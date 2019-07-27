@@ -48,7 +48,10 @@ class RegionProposalNetwork(tf.keras.Model):
         self.anchor_non_max_suppression_filter = NonMaxSuppressionAnchorFilter(self.non_max_suppression_iou_threshold)
 
         self.extractor = tf.keras.Sequential([
-            tf.keras.layers.Conv2D(self.rpn_features, 3, 1, 'same', activation='relu'),
+            tf.keras.layers.Conv2D(self.rpn_features, 3, 1, 'same'),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation('relu'),
+            tf.keras.layers.Dropout(0.2),
             tf.keras.layers.Conv2D(self.anchor_num_scales * 3 * 5, 1, 1, 'same')
         ])
 
