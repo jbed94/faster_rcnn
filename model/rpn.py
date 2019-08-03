@@ -51,7 +51,6 @@ class RegionProposalNetwork(tf.keras.Model):
             tf.keras.layers.Conv2D(self.rpn_features, 3, 1, 'same'),
             tf.keras.layers.BatchNormalization(),
             tf.keras.layers.Activation('relu'),
-            tf.keras.layers.Dropout(0.2),
             tf.keras.layers.Conv2D(self.anchor_num_scales * 3 * 5, 1, 1, 'same')
         ])
 

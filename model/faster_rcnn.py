@@ -65,7 +65,7 @@ class FasterRCNN(tf.keras.Model):
         self.fine_tune_features_extraction = fine_tune_features_extraction
 
         # features extraction network
-        self.cnn = tf.keras.applications.ResNet50(include_top=False)
+        self.cnn = tf.keras.applications.ResNet50(include_top=False, weights=None)
         # if not fine-tune then set parameters as not trainable
         if not self.fine_tune_features_extraction:
             for layer in self.cnn.layers:  # Freeze layers in pretrained model
@@ -85,8 +85,7 @@ class FasterRCNN(tf.keras.Model):
         self.extractor = tf.keras.Sequential([
             tf.keras.layers.Dense(self.frcnn_features),
             tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation('relu'),
-            tf.keras.layers.Dropout(0.2)
+            tf.keras.layers.Activation('relu')
         ])
         self.predict_class = tf.keras.layers.Dense(self.num_classes)
         self.predict_roi = tf.keras.layers.Dense(4)
