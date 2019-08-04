@@ -90,6 +90,6 @@ def _adjust_bbox(bbox1, bbox2):
     return tf.concat([
         (y1 - y2) / h2,
         (x1 - x2) / w2,
-        tf.log(tf.maximum((h1 / h2), 1e-6)),
-        tf.log(tf.maximum((w1 / w2), 1e-6))
+        tf.log(tf.maximum(h1 / h2, 1e-6)),
+        tf.log(tf.maximum(w1 / w2, 1e-6))
     ], -1)

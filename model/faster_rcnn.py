@@ -65,7 +65,7 @@ class FasterRCNN(tf.keras.Model):
         self.fine_tune_features_extraction = fine_tune_features_extraction
 
         # features extraction network
-        self.cnn = tf.keras.applications.ResNet50(include_top=False)
+        self.cnn = tf.keras.applications.ResNet50(include_top=False, weights=None)
         # if not fine-tune then set parameters as not trainable
         if not self.fine_tune_features_extraction:
             for layer in self.cnn.layers:  # Freeze layers in pretrained model
@@ -121,7 +121,7 @@ class FasterRCNN(tf.keras.Model):
             # here all overlapping anchors will be removed (respecting scores)
             tensors = [rpn_predictions, rpn_rois, anchors, scores, anchors_gt_bbox, anchors_gt_detection,
                        gt_object_label, image_assignments]
-            tensors = self.rpn.filter(rpn_rois, scores, image_assignments, tensors)
+            tensors = self.rpn.filter(rpn_rois, scores, image_assignments, original_shape, tensors)
             rpn_predictions, rpn_rois, anchors, scores, anchors_gt_bbox, anchors_gt_detection, gt_object_label, image_assignments = tuple(
                 tensors)
 
@@ -140,7 +140,7 @@ class FasterRCNN(tf.keras.Model):
         else:
             # filter according to the scores (removing overlapping anchors)
             rpn_predictions, rpn_rois, anchors, image_assignments = \
-                self.rpn.filter(rpn_rois, rpn_predictions, image_assignments,
+                self.rpn.filter(rpn_rois, rpn_predictions, image_assignments, original_shape,
                                 [rpn_predictions, rpn_rois, anchors, image_assignments])
             positive_predictions = tf.squeeze(tf.where(rpn_predictions >= self.detection_upper_threshold), 1)
 
@@ -150,9 +150,13 @@ class FasterRCNN(tf.keras.Model):
         anchors = tf.gather(anchors, positive_predictions)
         image_assignments = tf.gather(image_assignments, positive_predictions)
 
+        # normalize rois to have in range between [0,1]
+        h, w = original_shape[0], original_shape[1]
+        norm_rois = rpn_rois / tf.convert_to_tensor([[h, w, h, w]], tf.float32)
+
         # run roi align to extract object_features
         # size (example) [rois, 7, 7, 256]]
-        object_features = self.roi(context_features, rpn_rois, box_indices=image_assignments)
+        object_features = self.roi(context_features, norm_rois, box_indices=image_assignments)
         object_features = self.gap(object_features)
 
         # run final features extraction and predict classes and rois
