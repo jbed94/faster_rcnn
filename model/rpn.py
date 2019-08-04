@@ -57,6 +57,7 @@ class RegionProposalNetwork(tf.keras.Model):
     def call(self, inputs, training=None, original_shape=None, mask=None):
         # get batch size for tile fo anchors and image assignments
         batch_size = tf.shape(inputs)[0]
+        h, w = original_shape[0], original_shape[1]
 
         # run features extraction and output conv consisting of 5 filters (1 for classification and 4 for bbox)
         features = self.extractor(inputs)
@@ -76,6 +77,7 @@ class RegionProposalNetwork(tf.keras.Model):
 
         # for particular features (or rather features shape) prepare all possible anchors (y, x, height, width)
         anchors = _prepare_features_anchors(features_shape, original_shape, anchor_templates)
+        anchors /= tf.convert_to_tensor([[h, w, h, w]], tf.float32)
         anchors = tf.tile(anchors, [batch_size, 1])
         rois = anchors + rois_refinements
 
@@ -86,17 +88,17 @@ class RegionProposalNetwork(tf.keras.Model):
 
         # run filtering / cropping
         if training:
-            selected_anchors = self.anchor_cross_boundary_filter(anchors, original_shape)
+            selected_anchors = self.anchor_cross_boundary_filter(anchors)
             predictions, rois, anchors, image_assignments = \
                 _sample_many(selected_anchors, predictions, rois, anchors, image_assignments)
         else:
-            anchors = self.anchor_cross_boundary_crop(anchors, original_shape)
+            anchors = self.anchor_cross_boundary_crop(anchors)
 
         return predictions, rois, anchors, image_assignments
 
-    def filter(self, anchors, scores, image_assignments, original_shape, to_filter):
+    def filter(self, anchors, scores, image_assignments, to_filter):
         # first find interesting anchors
-        selected_anchors = self.anchor_non_max_suppression_filter(anchors, scores, image_assignments, original_shape)
+        selected_anchors = self.anchor_non_max_suppression_filter(anchors, scores, image_assignments)
 
         # then gather corresponding positions from every tensor in to_filter list
         return _sample_many(selected_anchors, *to_filter)
@@ -108,12 +110,12 @@ class CrossBoundaryAnchorFilter(tf.keras.layers.Layer):
     """
 
     # noinspection PyMethodOverriding
-    def call(self, anchors, original_shape, **kwargs):
+    def call(self, anchors, **kwargs):
         # 1. filter anchors which cross boundary
         y, x, h, w = tf.split(anchors, 4, -1)
         top, bottom, left, right = y - h, y + h, x - w, x + w
-        tb = tf.logical_and(top > 0.0, bottom < original_shape[0])
-        lr = tf.logical_and(left > 0.0, right < original_shape[1])
+        tb = tf.logical_and(top > 0.0, bottom < 1.0)
+        lr = tf.logical_and(left > 0.0, right < 1.0)
         inner_anchors = tf.squeeze(tf.logical_and(tb, lr), 1)
 
         # 2.1 first gather current filtered anchors and push them to non_max_suppression to increase efficiency
@@ -129,11 +131,10 @@ class CrossBoundaryAnchorCrop(tf.keras.layers.Layer):
     """
 
     # noinspection PyMethodOverriding
-    def call(self, anchors, original_shape, **kwargs):
-        h, w = original_shape
+    def call(self, anchors, **kwargs):
         anchors = center_point_to_coordnates(anchors, True)
-        anchors = tf.maximum(anchors, 0)
-        anchors = tf.minimum(anchors, [[h, w, h, w]])
+        anchors = tf.maximum(anchors, 0.0)
+        anchors = tf.minimum(anchors, 1.0)
         anchors = center_point_to_coordnates(anchors, True)
         return anchors
 
@@ -149,14 +150,12 @@ class NonMaxSuppressionAnchorFilter(tf.keras.layers.Layer):
         self.iou_threshold = iou_threshold
 
     # noinspection PyMethodOverriding
-    def call(self, anchors, scores, image_assignments, original_shape, **kwargs):
-        h, w = original_shape
+    def call(self, anchors, scores, image_assignments, **kwargs):
         # filter anchors according to the non_max_suppression
         anchors_coords = center_point_to_coordnates(anchors)
 
         # multibatch trick:
-        shifts = tf.cast(image_assignments[:, tf.newaxis], tf.float32) * tf.convert_to_tensor([[h, w, h, w]],
-                                                                                              tf.float32)
+        shifts = tf.cast(image_assignments[:, tf.newaxis], tf.float32) * 2.0
         anchors_coords += shifts
 
         selected_anchors = tf.image.non_max_suppression(anchors_coords, scores, tf.shape(anchors)[0],
