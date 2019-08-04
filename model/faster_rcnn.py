@@ -38,6 +38,7 @@ class FasterRCNN(tf.keras.Model):
                  detection_upper_threshold=0.7,
                  detection_lower_threshold=0.3,
                  fine_tune_features_extraction=False,
+                 input_shape=None,
                  *args, **kwargs):
         """
         :param num_classes: number of classes for classification detections,
@@ -65,7 +66,7 @@ class FasterRCNN(tf.keras.Model):
         self.fine_tune_features_extraction = fine_tune_features_extraction
 
         # features extraction network
-        self.cnn = tf.keras.applications.ResNet50(include_top=False, weights=None)
+        self.cnn = tf.keras.applications.ResNet50(include_top=False, input_shape=input_shape)
         # if not fine-tune then set parameters as not trainable
         if not self.fine_tune_features_extraction:
             for layer in self.cnn.layers:  # Freeze layers in pretrained model
@@ -216,5 +217,6 @@ class FasterRCNN(tf.keras.Model):
             'roi_align_samples': 2,
             'detection_upper_threshold': 0.7,
             'detection_lower_threshold': 0.3,
-            'fine_tune_features_extraction': fine_tune
+            'fine_tune_features_extraction': fine_tune,
+            'input_shape': [320, 480, 4]
         }
