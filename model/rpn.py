@@ -35,6 +35,7 @@ class RegionProposalNetwork(tf.keras.Model):
                  anchor_num_scales=3,
                  total_anchor_overlap_rate=0.9,
                  non_max_suppression_iou_threshold=0.7,
+                 input_shape=None,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -54,12 +55,15 @@ class RegionProposalNetwork(tf.keras.Model):
             tf.keras.layers.Conv2D(self.anchor_num_scales * 3 * 5, 1, 1, 'same')
         ])
 
+        if input_shape is not None:
+            self.extractor.build(input_shape)
+
     def call(self, inputs, training=None, original_shape=None, mask=None):
         # get batch size for tile fo anchors and image assignments
         batch_size = tf.shape(inputs)[0]
 
         # run features extraction and output conv consisting of 5 filters (1 for classification and 4 for bbox)
-        features = self.extractor(inputs)
+        features = self.extractor(inputs, training=training)
         # return also features shape to know how many samples (anchors) do we need
         features_shape = tf.shape(features).numpy()[1:3]
 

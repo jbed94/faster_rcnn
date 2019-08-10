@@ -75,7 +75,8 @@ class FasterRCNN(tf.keras.Model):
         self.rpn = RegionProposalNetwork(self.rpn_features,
                                          self.anchor_num_scales,
                                          self.total_anchor_overlap_rate,
-                                         self.non_max_suppression_iou_threshold)
+                                         self.non_max_suppression_iou_threshold,
+                                         self.cnn.output_shape)
 
         self.roi = ROIAlign(roi_align_output_size, roi_align_samples)
 
@@ -90,6 +91,11 @@ class FasterRCNN(tf.keras.Model):
         ])
         self.predict_class = tf.keras.layers.Dense(self.num_classes)
         self.predict_roi = tf.keras.layers.Dense(4)
+
+        # build all in advance
+        self.extractor.build((None, self.cnn.output_shape[-1]))
+        self.predict_class.build((None, self.frcnn_features))
+        self.predict_roi.build((None, self.frcnn_features))
 
     def call(self, inputs, training=None, inference=False, gt_object_bbox=None, gt_object_label=None,
              gt_num_objects=None, return_visual_representations=False, mask=None):
