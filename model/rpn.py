@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from .utils import _sample_many, center_point_to_coordnates
+from .utils import _sample_many, center_point_to_coordnates, coordinates_to_center_point
 
 
 class RegionProposalNetwork(tf.keras.Model):
@@ -52,7 +52,6 @@ class RegionProposalNetwork(tf.keras.Model):
             tf.keras.layers.Conv2D(self.rpn_features, 3, 1, 'same'),
             tf.keras.layers.BatchNormalization(),
             tf.keras.layers.Activation('relu'),
-            tf.keras.layers.Dropout(0.5),
             tf.keras.layers.Conv2D(self.anchor_num_scales * 3 * 5, 1, 1, 'same')
         ])
 
@@ -95,7 +94,7 @@ class RegionProposalNetwork(tf.keras.Model):
             predictions, rois, anchors, image_assignments = \
                 _sample_many(selected_anchors, predictions, rois, anchors, image_assignments)
         else:
-            anchors = self.anchor_cross_boundary_crop(anchors, original_shape)
+            rois = self.anchor_cross_boundary_crop(rois, original_shape)
 
         return predictions, rois, anchors, image_assignments
 
@@ -139,7 +138,7 @@ class CrossBoundaryAnchorCrop(tf.keras.layers.Layer):
         anchors = center_point_to_coordnates(anchors, True)
         anchors = tf.maximum(anchors, 0)
         anchors = tf.minimum(anchors, [[h, w, h, w]])
-        anchors = center_point_to_coordnates(anchors, True)
+        anchors = coordinates_to_center_point(anchors, True)
         return anchors
 
 
