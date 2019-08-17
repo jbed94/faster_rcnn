@@ -49,7 +49,10 @@ class RegionProposalNetwork(tf.keras.Model):
         self.anchor_non_max_suppression_filter = NonMaxSuppressionAnchorFilter(self.non_max_suppression_iou_threshold)
 
         self.extractor = tf.keras.Sequential([
-            tf.keras.layers.Conv2D(self.rpn_features, 3, 1, 'same', activation='relu'),
+            tf.keras.layers.Conv2D(self.rpn_features, 3, 1, 'same'),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation('relu'),
+            tf.keras.layers.Dropout(0.5),
             tf.keras.layers.Conv2D(self.anchor_num_scales * 3 * 5, 1, 1, 'same')
         ])
 
@@ -61,7 +64,7 @@ class RegionProposalNetwork(tf.keras.Model):
         batch_size = tf.shape(inputs)[0]
 
         # run features extraction and output conv consisting of 5 filters (1 for classification and 4 for bbox)
-        features = self.extractor(inputs)
+        features = self.extractor(inputs, training=training)
         # return also features shape to know how many samples (anchors) do we need
         features_shape = tf.shape(features).numpy()[1:3]
 

@@ -84,7 +84,12 @@ class FasterRCNN(tf.keras.Model):
         self.gap = tf.keras.layers.GlobalAveragePooling2D()
 
         # final features extraction and fast r-cnn predictions
-        self.extractor = tf.keras.layers.Dense(self.frcnn_features, 'relu')
+        self.extractor = tf.keras.Sequential([
+            tf.keras.layers.Dense(self.frcnn_features),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Activation('relu'),
+            tf.keras.layers.Dropout(0.5)
+        ])
         self.predict_class = tf.keras.layers.Dense(self.num_classes)
         self.predict_roi = tf.keras.layers.Dense(4)
 
@@ -163,7 +168,7 @@ class FasterRCNN(tf.keras.Model):
         object_features = self.gap(object_features)
 
         # run final features extraction and predict classes and rois
-        features = self.extractor(object_features)
+        features = self.extractor(object_features, training=training)
         frcnn_predictions = self.predict_class(features)
         frcnn_rois_refinements = self.predict_roi(features)
         frcnn_rois = frcnn_rois_refinements + rpn_rois
