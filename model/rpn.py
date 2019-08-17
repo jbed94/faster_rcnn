@@ -61,7 +61,7 @@ class RegionProposalNetwork(tf.keras.Model):
         batch_size = tf.shape(inputs)[0]
 
         # run features extraction and output conv consisting of 5 filters (1 for classification and 4 for bbox)
-        features = self.extractor(inputs, training=training)
+        features = self.extractor(inputs)
         # return also features shape to know how many samples (anchors) do we need
         features_shape = tf.shape(features).numpy()[1:3]
 

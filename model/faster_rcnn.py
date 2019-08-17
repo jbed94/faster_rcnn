@@ -163,7 +163,7 @@ class FasterRCNN(tf.keras.Model):
         object_features = self.gap(object_features)
 
         # run final features extraction and predict classes and rois
-        features = self.extractor(object_features, training=training)
+        features = self.extractor(object_features)
         frcnn_predictions = self.predict_class(features)
         frcnn_rois_refinements = self.predict_roi(features)
         frcnn_rois = frcnn_rois_refinements + rpn_rois
