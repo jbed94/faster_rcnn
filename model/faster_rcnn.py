@@ -88,7 +88,7 @@ class FasterRCNN(tf.keras.Model):
             tf.keras.layers.Dense(self.frcnn_features),
             tf.keras.layers.BatchNormalization(),
             tf.keras.layers.Activation('relu'),
-            tf.keras.layers.Dropout(0.3)
+            tf.keras.layers.Dropout(0.5)
         ])
         self.predict_class = tf.keras.layers.Dense(self.num_classes)
         self.predict_roi = tf.keras.layers.Dense(4)
@@ -215,8 +215,8 @@ class FasterRCNN(tf.keras.Model):
     def clevr_spec(fine_tune=False):
         return {
             'num_classes': 96,
-            'frcnn_features': 512,
-            'rpn_features': 512,
+            'frcnn_features': 1024,
+            'rpn_features': 1024,
             'anchor_num_scales': 3,
             'total_anchor_overlap_rate': 0.9,
             'non_max_suppression_iou_threshold': 0.7,
