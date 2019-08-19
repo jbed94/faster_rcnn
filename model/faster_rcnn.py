@@ -33,6 +33,7 @@ class FasterRCNN(tf.keras.Model):
                  anchor_num_scales=3,
                  total_anchor_overlap_rate=0.9,
                  non_max_suppression_iou_threshold=0.7,
+                 filter_cross_boundary=True,
                  roi_align_output_size=(7, 7),
                  roi_align_samples=2,
                  detection_upper_threshold=0.7,
@@ -47,6 +48,7 @@ class FasterRCNN(tf.keras.Model):
         :param anchor_num_scales: number of anchor scales (anchors are generated automatically)
         :param total_anchor_overlap_rate: size of the biggest anchor, e.g. 0.9 will results with anchor of size min(image_width, image_height) * 0.9
         :param non_max_suppression_iou_threshold: threshold for filtering overlapping detected anchors
+        :param filter_cross_boundary: whether filter cross-boundary rois or simply crop
         :param roi_align_output_size: size of the sample of the features for particular object, e.g. each detected object will have object_features [1, roi_align_output_size[0], roi_align_output_size[1], F]
         :param roi_align_samples: how many bilinear samples make for each output point (and the size of pooling)
         :param detection_upper_threshold: threshold for detecting object (made on scores)
@@ -61,6 +63,7 @@ class FasterRCNN(tf.keras.Model):
         self.anchor_num_scales = anchor_num_scales
         self.total_anchor_overlap_rate = total_anchor_overlap_rate
         self.non_max_suppression_iou_threshold = non_max_suppression_iou_threshold
+        self.filter_cross_boundary = filter_cross_boundary
         self.detection_upper_threshold = detection_upper_threshold
         self.detection_lower_threshold = detection_lower_threshold
         self.fine_tune_features_extraction = fine_tune_features_extraction
@@ -76,6 +79,7 @@ class FasterRCNN(tf.keras.Model):
                                          self.anchor_num_scales,
                                          self.total_anchor_overlap_rate,
                                          self.non_max_suppression_iou_threshold,
+                                         self.filter_cross_boundary,
                                          self.cnn.output_shape)
 
         self.roi = ROIAlign(roi_align_output_size, roi_align_samples)
@@ -205,6 +209,7 @@ class FasterRCNN(tf.keras.Model):
             'anchor_num_scales': 3,
             'total_anchor_overlap_rate': 0.9,
             'non_max_suppression_iou_threshold': 0.4,
+            'filter_cross_boundary': True,
             'roi_align_output_size': (7, 7),
             'roi_align_samples': 2,
             'detection_upper_threshold': 0.7,
@@ -221,6 +226,7 @@ class FasterRCNN(tf.keras.Model):
             'anchor_num_scales': 3,
             'total_anchor_overlap_rate': 0.9,
             'non_max_suppression_iou_threshold': 0.4,
+            'filter_cross_boundary': False,
             'roi_align_output_size': (7, 7),
             'roi_align_samples': 2,
             'detection_upper_threshold': 0.7,

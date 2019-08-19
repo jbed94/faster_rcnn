@@ -35,6 +35,7 @@ class RegionProposalNetwork(tf.keras.Model):
                  anchor_num_scales=3,
                  total_anchor_overlap_rate=0.9,
                  non_max_suppression_iou_threshold=0.7,
+                 filter_cross_boundary=True,
                  input_shape=None,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -43,6 +44,7 @@ class RegionProposalNetwork(tf.keras.Model):
         self.anchor_num_scales = anchor_num_scales
         self.total_anchor_overlap_rate = total_anchor_overlap_rate
         self.non_max_suppression_iou_threshold = non_max_suppression_iou_threshold
+        self.filter_cross_boundary = filter_cross_boundary
 
         self.anchor_cross_boundary_filter = CrossBoundaryAnchorFilter()
         self.anchor_cross_boundary_crop = CrossBoundaryAnchorCrop()
@@ -91,13 +93,12 @@ class RegionProposalNetwork(tf.keras.Model):
         image_assignments = tf.reshape(image_assignments, [-1])
 
         # run filtering / cropping
-        # TODO: WHY REMOVE?
-        # if training:
-        #     selected_anchors = self.anchor_cross_boundary_filter(anchors, original_shape)
-        #     predictions, rois, anchors, image_assignments = \
-        #         _sample_many(selected_anchors, predictions, rois, anchors, image_assignments)
-        # else:
-        rois = self.anchor_cross_boundary_crop(rois, original_shape)
+        if training and self.filter_cross_boundary:
+            selected_anchors = self.anchor_cross_boundary_filter(anchors, original_shape)
+            predictions, rois, anchors, image_assignments = \
+                _sample_many(selected_anchors, predictions, rois, anchors, image_assignments)
+        else:
+            rois = self.anchor_cross_boundary_crop(rois, original_shape)
 
         return predictions, rois, anchors, image_assignments
 
