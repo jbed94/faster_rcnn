@@ -85,9 +85,11 @@ class FasterRCNN(tf.keras.Model):
 
         # final features extraction and fast r-cnn predictions
         self.extractor = tf.keras.Sequential([
+            tf.keras.layers.Dropout(0.5),
             tf.keras.layers.Dense(self.frcnn_features),
             tf.keras.layers.BatchNormalization(),
-            tf.keras.layers.Activation('relu')
+            tf.keras.layers.Activation('relu'),
+            tf.keras.layers.Dropout(0.5)
         ])
         self.predict_class = tf.keras.layers.Dense(self.num_classes)
         self.predict_roi = tf.keras.layers.Dense(4)
