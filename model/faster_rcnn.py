@@ -164,7 +164,7 @@ class FasterRCNN(tf.keras.Model):
         norm_rois = rpn_rois / tf.convert_to_tensor([[h, w, h, w]], tf.float32)
 
         # run roi align to extract object_features
-        # size (example) [rois, 7, 7, 256]]
+        # size (example) [rois, 7, 7, X]]
         object_features = self.roi(context_features, norm_rois, box_indices=image_assignments)
         object_features = self.gap(object_features)
 
@@ -204,7 +204,7 @@ class FasterRCNN(tf.keras.Model):
             'rpn_features': 512,
             'anchor_num_scales': 3,
             'total_anchor_overlap_rate': 0.9,
-            'non_max_suppression_iou_threshold': 0.7,
+            'non_max_suppression_iou_threshold': 0.4,
             'roi_align_output_size': (7, 7),
             'roi_align_samples': 2,
             'detection_upper_threshold': 0.7,
@@ -216,8 +216,8 @@ class FasterRCNN(tf.keras.Model):
     def clevr_spec(fine_tune=False):
         return {
             'num_classes': 96,
-            'frcnn_features': 2048,
-            'rpn_features': 2048,
+            'frcnn_features': 512,
+            'rpn_features': 512,
             'anchor_num_scales': 3,
             'total_anchor_overlap_rate': 0.9,
             'non_max_suppression_iou_threshold': 0.4,
