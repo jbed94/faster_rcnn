@@ -220,7 +220,7 @@ class FasterRCNN(tf.keras.Model):
             'rpn_features': 2048,
             'anchor_num_scales': 3,
             'total_anchor_overlap_rate': 0.9,
-            'non_max_suppression_iou_threshold': 0.7,
+            'non_max_suppression_iou_threshold': 0.4,
             'roi_align_output_size': (7, 7),
             'roi_align_samples': 2,
             'detection_upper_threshold': 0.7,
