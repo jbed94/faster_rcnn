@@ -91,12 +91,13 @@ class RegionProposalNetwork(tf.keras.Model):
         image_assignments = tf.reshape(image_assignments, [-1])
 
         # run filtering / cropping
-        if training:
-            selected_anchors = self.anchor_cross_boundary_filter(anchors, original_shape)
-            predictions, rois, anchors, image_assignments = \
-                _sample_many(selected_anchors, predictions, rois, anchors, image_assignments)
-        else:
-            rois = self.anchor_cross_boundary_crop(rois, original_shape)
+        # TODO: WHY REMOVE?
+        # if training:
+        #     selected_anchors = self.anchor_cross_boundary_filter(anchors, original_shape)
+        #     predictions, rois, anchors, image_assignments = \
+        #         _sample_many(selected_anchors, predictions, rois, anchors, image_assignments)
+        # else:
+        rois = self.anchor_cross_boundary_crop(rois, original_shape)
 
         return predictions, rois, anchors, image_assignments
 
