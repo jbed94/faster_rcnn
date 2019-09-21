@@ -218,7 +218,7 @@ class FasterRCNN(tf.keras.Model):
         }
 
     @staticmethod
-    def clevr_spec(fine_tune=False):
+    def clevr_spec():
         return {
             'num_classes': 96,
             'frcnn_features': 512,
@@ -231,6 +231,5 @@ class FasterRCNN(tf.keras.Model):
             'roi_align_samples': 2,
             'detection_upper_threshold': 0.7,
             'detection_lower_threshold': 0.3,
-            'fine_tune_features_extraction': fine_tune,
             'input_shape': [320, 480, 3]
         }
