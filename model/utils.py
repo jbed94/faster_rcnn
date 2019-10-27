@@ -112,31 +112,27 @@ def _get_object_presence(gt_num_objects):
     return tf.concat(object_presence, 0)
 
 
-def get_gt_data(anchors, gt_object_bbox, gt_object_label, image_assignments, gt_num_objects, score_threshold=0.7):
+def get_gt_data(anchors, gt_object_bbox, gt_object_label, gt_num_objects, score_threshold=0.7):
     """
     Helper function which assigns ground truth data to each detected anchor.
     :param anchors: [None, 4] - detected anchors at the image,
     :param gt_object_bbox: [None, max_gt, 4] - ground truth bounding boxes of the objects,
     :param gt_object_label: [None, max_gt] - ground truth labels of the objects,
-    :param image_assignments: [None] - assignment to which image in batch given anchors relays,
     :param gt_num_objects: number of objects (ground truth) in each example in batch,
     :param score_threshold: then to say that anchor (according to the IoU) contains object or not.
     :return: ground truth data (bbox, detection, scores, object label) for each input anchor
     """
     # get some constant values like batch size, number of anchors for each input image
     batch_size = tf.shape(gt_object_bbox)[0]
-    res = tf.unique_with_counts(image_assignments)
-    c, y = res.count.numpy(), res.y.numpy()
-    max_count = max(c)
+    anchors = tf.reshape(anchors, [batch_size, -1, 4])
 
     # we assume, that each image in batch may have different number of anchors (f.e. if different anchors filtering
     # will be executed, at the beginning), so we need to calculate all sparse indices to "active" detected objects
     # and ground truth data (we pad both GROUND TRUTH and DETECTED ANCHORS)
-    active_anchors, padded_anchors = _pad_anchors(anchors, y, c, batch_size)
     object_presence = _get_object_presence(gt_num_objects)
 
     # calculate iou between all anchors and gt (also between padded ones !!!)
-    iou = reduce_bbox_iou(padded_anchors, gt_object_bbox)
+    iou = reduce_bbox_iou(anchors, gt_object_bbox)
 
     # Find best anchor for each ground truth (closest in IoU score)
     # There might be situation where closes anchor has IoU < threshold, but we need to decide which is the best
@@ -145,7 +141,7 @@ def get_gt_data(anchors, gt_object_bbox, gt_object_label, image_assignments, gt_
     best_anchors = tf.stack([tf.reshape(batch_idx, [-1]), tf.reshape(best_anchors, [-1])], 1)
 
     # Assign scores to found ones (here scores are not IoU yet)
-    best_scores = tf.scatter_nd(best_anchors, object_presence, [batch_size, max_count])
+    best_scores = tf.scatter_nd(best_anchors, object_presence, [batch_size, tf.shape(anchors)[1]])
     best_scores = tf.minimum(best_scores, 1.0)
 
     # WARNING: for opposite situation for the best anchor for particular ground truth does not have to occur
@@ -175,13 +171,79 @@ def get_gt_data(anchors, gt_object_bbox, gt_object_label, image_assignments, gt_
     # assign label 1.0 if score > 0.7 (so at least 1 anchor has label 1.0)
     gt_label = tf.cast(scores >= score_threshold, tf.float32)
 
-    # gather output tensors (filter only active anchors, remove padded ones)
-    gt_object_bbox = tf.gather(gt_object_bbox, active_anchors)
-    gt_label = tf.gather(gt_label, active_anchors)
-    scores = tf.gather(scores, active_anchors)
-    gt_object_label = tf.gather(gt_object_label, active_anchors)
-
     return gt_object_bbox, gt_label, scores, gt_object_label
+
+
+# def get_gt_data(anchors, gt_object_bbox, gt_object_label, image_assignments, gt_num_objects, score_threshold=0.7):
+#     """
+#     Helper function which assigns ground truth data to each detected anchor.
+#     :param anchors: [None, 4] - detected anchors at the image,
+#     :param gt_object_bbox: [None, max_gt, 4] - ground truth bounding boxes of the objects,
+#     :param gt_object_label: [None, max_gt] - ground truth labels of the objects,
+#     :param image_assignments: [None] - assignment to which image in batch given anchors relays,
+#     :param gt_num_objects: number of objects (ground truth) in each example in batch,
+#     :param score_threshold: then to say that anchor (according to the IoU) contains object or not.
+#     :return: ground truth data (bbox, detection, scores, object label) for each input anchor
+#     """
+#     # get some constant values like batch size, number of anchors for each input image
+#     batch_size = tf.shape(gt_object_bbox)[0]
+#     res = tf.unique_with_counts(image_assignments)
+#     c, y = res.count.numpy(), res.y.numpy()
+#     max_count = max(c)
+#
+#     # we assume, that each image in batch may have different number of anchors (f.e. if different anchors filtering
+#     # will be executed, at the beginning), so we need to calculate all sparse indices to "active" detected objects
+#     # and ground truth data (we pad both GROUND TRUTH and DETECTED ANCHORS)
+#     active_anchors, padded_anchors = _pad_anchors(anchors, y, c, batch_size)
+#     object_presence = _get_object_presence(gt_num_objects)
+#
+#     # calculate iou between all anchors and gt (also between padded ones !!!)
+#     iou = reduce_bbox_iou(padded_anchors, gt_object_bbox)
+#
+#     # Find best anchor for each ground truth (closest in IoU score)
+#     # There might be situation where closes anchor has IoU < threshold, but we need to decide which is the best
+#     best_anchors = tf.argmax(iou, 1, output_type=tf.int32)
+#     batch_idx = tf.tile(tf.range(0, batch_size)[:, tf.newaxis], [1, tf.shape(best_anchors)[1]])
+#     best_anchors = tf.stack([tf.reshape(batch_idx, [-1]), tf.reshape(best_anchors, [-1])], 1)
+#
+#     # Assign scores to found ones (here scores are not IoU yet)
+#     best_scores = tf.scatter_nd(best_anchors, object_presence, [batch_size, max_count])
+#     best_scores = tf.minimum(best_scores, 1.0)
+#
+#     # WARNING: for opposite situation for the best anchor for particular ground truth does not have to occur
+#     # best gt for each anchor can be different
+#     fix_indices = tf.tile(tf.range(0, tf.shape(gt_object_bbox)[1])[:, tf.newaxis], [tf.shape(gt_object_bbox)[0], 1])
+#     fix_indices = tf.concat([best_anchors, fix_indices], -1)
+#     iou_fix = tf.scatter_nd(fix_indices, object_presence, tf.shape(iou))
+#     iou_fix = tf.minimum(iou_fix, 1.0)
+#
+#     # now highest iou (hopefully, because there always can be more "1"s, but then don't care),
+#     # will be for anchor's best fit
+#     iou = tf.maximum(iou, iou_fix)
+#
+#     # Find best ground truth for each anchor
+#     scores = tf.reduce_max(iou, 2)
+#     gt_idx = tf.argmax(iou, 2, output_type=tf.int32)
+#     batch_idx = tf.tile(tf.range(0, batch_size)[:, tf.newaxis], [1, tf.shape(gt_idx)[1]])
+#     gt_idx = tf.stack([tf.reshape(batch_idx, [-1]), tf.reshape(gt_idx, [-1])], 1)
+#
+#     # gather closest gt bbox and gt label for each detected anchor
+#     gt_object_bbox = tf.gather_nd(gt_object_bbox, gt_idx)
+#     gt_object_label = tf.gather_nd(gt_object_label, gt_idx)
+#
+#     # Merge scores (score != best_score)
+#     scores = tf.reshape(tf.maximum(scores, best_scores), [-1])
+#
+#     # assign label 1.0 if score > 0.7 (so at least 1 anchor has label 1.0)
+#     gt_label = tf.cast(scores >= score_threshold, tf.float32)
+#
+#     # gather output tensors (filter only active anchors, remove padded ones)
+#     gt_object_bbox = tf.gather(gt_object_bbox, active_anchors)
+#     gt_label = tf.gather(gt_label, active_anchors)
+#     scores = tf.gather(scores, active_anchors)
+#     gt_object_label = tf.gather(gt_object_label, active_anchors)
+#
+#     return gt_object_bbox, gt_label, scores, gt_object_label
 
 
 def get_data_sampler(scores, rpn_predictions, rpn_rois, anchors, anchors_gt_bbox, anchors_gt_detection,
@@ -228,3 +290,17 @@ def _sample_many(indices, *tensors):
     Simple helper for gathering the same indices from a given list of tensors
     """
     return tuple([tf.gather(tensor, indices) for tensor in tensors])
+
+
+def allow_memory_growth():
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # Currently, memory growth needs to be the same across GPUs
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        except RuntimeError as e:
+            # Memory growth must be set before GPUs have been initialized
+            print(e)

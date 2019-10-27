@@ -34,22 +34,17 @@ class RegionProposalNetwork(tf.keras.Model):
     def __init__(self, rpn_features,
                  anchor_num_scales=3,
                  total_anchor_overlap_rate=0.9,
-                 non_max_suppression_iou_threshold=0.7,
-                 filter_cross_boundary=True,
-                 input_shape=None,
+                 image_size=None,
+                 features_size=None,
                  *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.rpn_features = rpn_features
         self.anchor_num_scales = anchor_num_scales
         self.total_anchor_overlap_rate = total_anchor_overlap_rate
-        self.non_max_suppression_iou_threshold = non_max_suppression_iou_threshold
-        self.filter_cross_boundary = filter_cross_boundary
 
+        # todo: do we need layer? maybe just function?
         self.anchor_cross_boundary_filter = CrossBoundaryAnchorFilter()
-        self.anchor_cross_boundary_crop = CrossBoundaryAnchorCrop()
-        self.anchor_non_max_suppression_filter = NonMaxSuppressionAnchorFilter(self.non_max_suppression_iou_threshold)
-
         self.extractor = tf.keras.Sequential([
             tf.keras.layers.Dropout(0.5),
             tf.keras.layers.Conv2D(self.rpn_features, 3, 1, 'same'),
@@ -59,17 +54,21 @@ class RegionProposalNetwork(tf.keras.Model):
             tf.keras.layers.Conv2D(self.anchor_num_scales * 3 * 5, 1, 1, 'same')
         ])
 
-        if input_shape is not None:
-            self.extractor.build(input_shape)
+        # get anchor templates (total number = 3 * num_scales, rates per scale: 2:2, 1:2, 2:1)
+        anchor_templates = _prepare_anchor_templates(image_size, self.anchor_num_scales,
+                                                     self.total_anchor_overlap_rate)
 
-    def call(self, inputs, training=None, original_shape=None, mask=None):
+        # for particular features (or rather features shape) prepare all possible anchors (y, x, height, width)
+        self.anchors = _prepare_features_anchors(features_size, image_size, anchor_templates)
+        self.image_size = image_size
+        self.features_size = features_size
+
+    def call(self, inputs, training=None, mask=None):
         # get batch size for tile fo anchors and image assignments
         batch_size = tf.shape(inputs)[0]
 
         # run features extraction and output conv consisting of 5 filters (1 for classification and 4 for bbox)
         features = self.extractor(inputs, training=training)
-        # return also features shape to know how many samples (anchors) do we need
-        features_shape = tf.shape(features).numpy()[1:3]
 
         # get detection (1 vals - logical regression), and bbox (4 vals)
         f_shape = tf.shape(features)
@@ -78,13 +77,7 @@ class RegionProposalNetwork(tf.keras.Model):
         rois_refinements = tf.reshape(features[:, :, :, :, 1:], [-1, 4])
 
         # build all possible anchors
-        # get anchor templates (total number = 3 * num_scales, rates per scale: 2:2, 1:2, 2:1)
-        anchor_templates = _prepare_anchor_templates(original_shape, self.anchor_num_scales,
-                                                     self.total_anchor_overlap_rate)
-
-        # for particular features (or rather features shape) prepare all possible anchors (y, x, height, width)
-        anchors = _prepare_features_anchors(features_shape, original_shape, anchor_templates)
-        anchors = tf.tile(anchors, [batch_size, 1])
+        anchors = tf.tile(self.anchors, [batch_size, 1])
         rois = anchors + rois_refinements
 
         # produce image assignments for each anchor -> image
@@ -93,12 +86,9 @@ class RegionProposalNetwork(tf.keras.Model):
         image_assignments = tf.reshape(image_assignments, [-1])
 
         # run filtering / cropping
-        if training and self.filter_cross_boundary:
-            selected_anchors = self.anchor_cross_boundary_filter(anchors, original_shape)
-            predictions, rois, anchors, image_assignments = \
-                _sample_many(selected_anchors, predictions, rois, anchors, image_assignments)
-        else:
-            rois = self.anchor_cross_boundary_crop(rois, original_shape)
+        anchors_active = self.anchor_cross_boundary_filter(anchors, self.image_size)
+        predictions, rois, anchors, image_assignments = \
+            _sample_many(anchors_active, predictions, rois, anchors, image_assignments)
 
         return predictions, rois, anchors, image_assignments
 
@@ -122,10 +112,10 @@ class CrossBoundaryAnchorFilter(tf.keras.layers.Layer):
         top, bottom, left, right = y - h, y + h, x - w, x + w
         tb = tf.logical_and(top > 0.0, bottom < original_shape[0])
         lr = tf.logical_and(left > 0.0, right < original_shape[1])
-        inner_anchors = tf.squeeze(tf.logical_and(tb, lr), 1)
+        inner_anchors = tf.squeeze(tf.logical_and(tb, lr), -1)
 
         # 2.1 first gather current filtered anchors and push them to non_max_suppression to increase efficiency
-        selected_anchors = tf.squeeze(tf.where(inner_anchors), 1)
+        selected_anchors = tf.squeeze(tf.where(inner_anchors), -1)
 
         return selected_anchors
 
@@ -141,7 +131,7 @@ class CrossBoundaryAnchorCrop(tf.keras.layers.Layer):
         h, w = original_shape
         anchors = center_point_to_coordnates(anchors, True)
         anchors = tf.maximum(anchors, 0)
-        anchors = tf.minimum(anchors, [[h, w, h, w]])
+        anchors = tf.minimum(anchors, [[[h, w, h, w]]])
         anchors = coordinates_to_center_point(anchors, True)
         return anchors
 
@@ -158,7 +148,7 @@ class NonMaxSuppressionAnchorFilter(tf.keras.layers.Layer):
 
     # noinspection PyMethodOverriding
     def call(self, anchors, scores, image_assignments, original_shape, **kwargs):
-        h, w = original_shape
+        h, w, _ = original_shape
         # filter anchors according to the non_max_suppression
         anchors_coords = center_point_to_coordnates(anchors)
 
@@ -171,6 +161,13 @@ class NonMaxSuppressionAnchorFilter(tf.keras.layers.Layer):
                                                         self.iou_threshold)
 
         return selected_anchors
+
+    def filter(self, anchors, scores, image_assignments, original_shape, to_filter):
+        # first find interesting anchors
+        selected_anchors = self(anchors, scores, image_assignments, original_shape)
+
+        # then gather corresponding positions from every tensor in to_filter list
+        return _sample_many(selected_anchors, *to_filter)
 
 
 def _prepare_anchor_templates(original_shape, num_scales, total_overlap_rate=0.9):

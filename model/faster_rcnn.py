@@ -1,8 +1,7 @@
 import tensorflow as tf
 
 from .roi import ROIAlign
-from .rpn import RegionProposalNetwork
-from .utils import get_gt_data, get_data_sampler, _sample_many
+from .rpn import RegionProposalNetwork, NonMaxSuppressionAnchorFilter
 
 
 class FasterRCNN(tf.keras.Model):
@@ -38,8 +37,7 @@ class FasterRCNN(tf.keras.Model):
                  roi_align_samples=2,
                  detection_upper_threshold=0.7,
                  detection_lower_threshold=0.3,
-                 fine_tune_features_extraction=False,
-                 input_shape=None,
+                 image_size=None,
                  *args, **kwargs):
         """
         :param num_classes: number of classes for classification detections,
@@ -53,7 +51,6 @@ class FasterRCNN(tf.keras.Model):
         :param roi_align_samples: how many bilinear samples make for each output point (and the size of pooling)
         :param detection_upper_threshold: threshold for detecting object (made on scores)
         :param detection_lower_threshold: threshold for detecting not-object (made on scores)
-        :param fine_tune_features_extraction: whether fine-tune features extraction network
         """
         super().__init__(*args, **kwargs)
 
@@ -66,21 +63,15 @@ class FasterRCNN(tf.keras.Model):
         self.filter_cross_boundary = filter_cross_boundary
         self.detection_upper_threshold = detection_upper_threshold
         self.detection_lower_threshold = detection_lower_threshold
-        self.fine_tune_features_extraction = fine_tune_features_extraction
+        self.image_size = image_size
 
         # features extraction network
-        self.cnn = tf.keras.applications.ResNet50(include_top=False, input_shape=input_shape)
-        # if not fine-tune then set parameters as not trainable
-        if not self.fine_tune_features_extraction:
-            for layer in self.cnn.layers:  # Freeze layers in pretrained model
-                layer.trainable = False
-
+        self.cnn = tf.keras.applications.ResNet50(weights=None, include_top=False, input_shape=self.image_size)
         self.rpn = RegionProposalNetwork(self.rpn_features,
                                          self.anchor_num_scales,
                                          self.total_anchor_overlap_rate,
-                                         self.non_max_suppression_iou_threshold,
-                                         self.filter_cross_boundary,
-                                         self.cnn.output_shape)
+                                         self.image_size,
+                                         self.cnn.output_shape[1:])
 
         self.roi = ROIAlign(roi_align_output_size, roi_align_samples)
 
@@ -98,64 +89,34 @@ class FasterRCNN(tf.keras.Model):
         self.predict_class = tf.keras.layers.Dense(self.num_classes)
         self.predict_roi = tf.keras.layers.Dense(4)
 
-        # build all in advance
-        self.extractor.build((None, self.cnn.output_shape[-1]))
-        self.predict_class.build((None, self.frcnn_features))
-        self.predict_roi.build((None, self.frcnn_features))
+        self.anchor_non_max_suppression_filter = NonMaxSuppressionAnchorFilter(self.non_max_suppression_iou_threshold)
 
-    def call(self, inputs, training=None, inference=False, gt_object_bbox=None, gt_object_label=None,
-             gt_num_objects=None, return_visual_representations=False, mask=None):
+    @tf.function
+    def call_supervised(self, inputs, training, scores):
+        return self(inputs, training, scores)
+
+    @tf.function
+    def call_unsupervised(self, inputs, training):
+        return self(inputs, training)
+
+    def call(self, inputs, training=False, scores=None):
         # get a shape of the input image
-        original_shape = tf.shape(inputs).numpy()[1:3]
 
         # extract features using cnn, if fine-tune then pass training argument,
         # otherwise always false (because of batch normalization adjustment in eager execution)
-        context_features = self.cnn(inputs, training=training and self.fine_tune_features_extraction)
+        context_features = self.cnn(inputs, training=training)
 
         # run Region Proposal Network with first filtering of the cross-boundary filter
+        rpn_predictions, rpn_rois, anchors, image_assignments = self.rpn(context_features, training=training)
+
+        scores = rpn_predictions if scores is None else scores
+
+        # filter according to the scores (removing overlapping anchors)
         rpn_predictions, rpn_rois, anchors, image_assignments = \
-            self.rpn(context_features, training=training, original_shape=original_shape)
-
-        # if training or validation then get ground-truth and calculate scores according to the IoU between
-        # each anchor and ground truth
-        rpn_sampler = None
-        gt_outputs = None
-        if training or not inference:
-            # when training or validation additional ground-truth arguments need to be passed to network (call params)
-            assert gt_object_bbox is not None
-            assert gt_object_label is not None
-
-            # get ground truth data (and assign nearest ground truth to each anchor)
-            anchors_gt_bbox, anchors_gt_detection, scores, gt_object_label = \
-                get_gt_data(anchors, gt_object_bbox, gt_object_label, image_assignments, gt_num_objects,
-                            self.detection_upper_threshold)
-
-            # run filtering according to the scores
-            # here all overlapping anchors will be removed (respecting scores)
-            tensors = [rpn_predictions, rpn_rois, anchors, scores, anchors_gt_bbox, anchors_gt_detection,
-                       gt_object_label, image_assignments]
-            tensors = self.rpn.filter(rpn_rois, scores, image_assignments, original_shape, tensors)
-            rpn_predictions, rpn_rois, anchors, scores, anchors_gt_bbox, anchors_gt_detection, gt_object_label, image_assignments = tuple(
-                tensors)
-
-            # construct sampler for easy "positive" and "negative" anchors sampling
-            # we do this, because there are a lot of negatives and only few positives,
-            # so f.e. if we have |positive| = 3 and |negative| = 200 we can sample f.e. 32 times from
-            # positive (one object may be sampled multiple times), and 32 times from negative
-            rpn_sampler = get_data_sampler(
-                scores, rpn_predictions, rpn_rois, anchors, anchors_gt_bbox, anchors_gt_detection, image_assignments,
-                self.detection_upper_threshold,
-                self.detection_lower_threshold)
-            # output will additionally contains gt bboxes and object label (like tree, ball, etc)
-            gt_outputs = [anchors_gt_bbox, gt_object_label, anchors_gt_detection]
-            positive_predictions = tf.squeeze(tf.where(scores >= self.detection_upper_threshold), 1)
-            gt_outputs = _sample_many(positive_predictions, *gt_outputs)
-        else:
-            # filter according to the scores (removing overlapping anchors)
-            rpn_predictions, rpn_rois, anchors, image_assignments = \
-                self.rpn.filter(rpn_rois, rpn_predictions, image_assignments, original_shape,
-                                [rpn_predictions, rpn_rois, anchors, image_assignments])
-            positive_predictions = tf.squeeze(tf.where(rpn_predictions >= self.detection_upper_threshold), 1)
+            self.anchor_non_max_suppression_filter.filter(rpn_rois, scores, image_assignments,
+                                                          self.image_size,
+                                                          [rpn_predictions, rpn_rois, anchors, image_assignments])
+        positive_predictions = tf.squeeze(tf.where(scores >= self.detection_upper_threshold), 1)
 
         # after RPN we need only positive detections
         rpn_predictions = tf.gather(rpn_predictions, positive_predictions)
@@ -164,7 +125,7 @@ class FasterRCNN(tf.keras.Model):
         image_assignments = tf.gather(image_assignments, positive_predictions)
 
         # normalize rois to have in range between [0,1]
-        h, w = original_shape[0], original_shape[1]
+        h, w, _ = self.image_size
         norm_rois = rpn_rois / tf.convert_to_tensor([[h, w, h, w]], tf.float32)
 
         # run roi align to extract object_features
@@ -179,26 +140,28 @@ class FasterRCNN(tf.keras.Model):
         frcnn_rois = frcnn_rois_refinements + rpn_rois
 
         # calculate visual representation for each object if necessary
-        visual_representations = None
-        if return_visual_representations:
-            context_features = self.gap(context_features)
-            context_features = tf.gather(context_features, image_assignments)
-            visual_representations = tf.concat([context_features, object_features], -1)
+        context_features = self.gap(context_features)
+        context_features = tf.gather(context_features, image_assignments)
+        visual_representations = tf.concat([context_features, object_features], -1)
 
         rpn_output = (rpn_predictions, rpn_rois)
         frcnn_output = (frcnn_predictions, frcnn_rois)
-        anchors = anchors
-        gt_outputs = gt_outputs
 
         return {
             'rpn_outputs': rpn_output,
             'frcnn_outputs': frcnn_output,
             'anchors': anchors,
-            'gt_outputs': gt_outputs,
-            'rpn_sampler': rpn_sampler,
             'visual_representations': visual_representations,
             'image_assignments': image_assignments
         }
+
+    def get_anchors(self, batch_size, image_size):
+        # be careful! these anchors need to be initialized in the same way as anchors inside rpn
+        # it regards also to filtering!
+        anchors = tf.tile(self.rpn.anchors, [batch_size, 1])
+        anchors_active = self.rpn.anchor_cross_boundary_filter(anchors, image_size)
+        anchors = tf.gather(anchors, anchors_active)
+        return anchors
 
     @staticmethod
     def std_spec(num_classes, fine_tune=False):

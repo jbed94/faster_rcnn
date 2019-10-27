@@ -50,7 +50,7 @@ class ROIAlign(tf.keras.layers.Layer):
         crop_size = tf.constant([self.output_size[0] * self.samples_rate, self.output_size[1] * self.samples_rate])
 
         # box_indices should be all zeros
-        sampled = tf.image.crop_and_resize(inputs, new_boxes, box_ind=box_indices, crop_size=crop_size,
+        sampled = tf.image.crop_and_resize(inputs, new_boxes, box_indices=box_indices, crop_size=crop_size,
                                            method='bilinear')
 
         # run pooling (may be 'valid' because kernel is adjusted to size
