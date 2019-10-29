@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-from .utils import _sample_many, center_point_to_coordnates, coordinates_to_center_point
+from .utils import sample_many, center_point_to_coordnates, coordinates_to_center_point
 
 
 class RegionProposalNetwork(tf.keras.Model):
@@ -43,7 +43,6 @@ class RegionProposalNetwork(tf.keras.Model):
         self.anchor_num_scales = anchor_num_scales
         self.total_anchor_overlap_rate = total_anchor_overlap_rate
 
-        # todo: do we need layer? maybe just function?
         self.anchor_cross_boundary_filter = CrossBoundaryAnchorFilter()
         self.extractor = tf.keras.Sequential([
             tf.keras.layers.Dropout(0.5),
@@ -62,6 +61,9 @@ class RegionProposalNetwork(tf.keras.Model):
         self.anchors = _prepare_features_anchors(features_size, image_size, anchor_templates)
         self.image_size = image_size
         self.features_size = features_size
+
+        # get filtered anchors for faster processing
+        self.anchors_filtered = tf.gather(self.anchors, self.anchor_cross_boundary_filter(self.anchors, image_size))
 
     def call(self, inputs, training=None, mask=None):
         # get batch size for tile fo anchors and image assignments
@@ -88,7 +90,7 @@ class RegionProposalNetwork(tf.keras.Model):
         # run filtering / cropping
         anchors_active = self.anchor_cross_boundary_filter(anchors, self.image_size)
         predictions, rois, anchors, image_assignments = \
-            _sample_many(anchors_active, predictions, rois, anchors, image_assignments)
+            sample_many(anchors_active, predictions, rois, anchors, image_assignments)
 
         return predictions, rois, anchors, image_assignments
 
@@ -97,7 +99,7 @@ class RegionProposalNetwork(tf.keras.Model):
         selected_anchors = self.anchor_non_max_suppression_filter(anchors, scores, image_assignments, original_shape)
 
         # then gather corresponding positions from every tensor in to_filter list
-        return _sample_many(selected_anchors, *to_filter)
+        return sample_many(selected_anchors, *to_filter)
 
 
 class CrossBoundaryAnchorFilter(tf.keras.layers.Layer):
@@ -163,11 +165,12 @@ class NonMaxSuppressionAnchorFilter(tf.keras.layers.Layer):
         return selected_anchors
 
     def filter(self, anchors, scores, image_assignments, original_shape, to_filter):
+        # todo: move to call()
         # first find interesting anchors
         selected_anchors = self(anchors, scores, image_assignments, original_shape)
 
         # then gather corresponding positions from every tensor in to_filter list
-        return _sample_many(selected_anchors, *to_filter)
+        return sample_many(selected_anchors, *to_filter)
 
 
 def _prepare_anchor_templates(original_shape, num_scales, total_overlap_rate=0.9):
@@ -179,7 +182,7 @@ def _prepare_anchor_templates(original_shape, num_scales, total_overlap_rate=0.9
     :return: flatten list of anchors ([num_anchors, 2], 2 values for width and height)
     """
     # size of the biggest anchor have to be smaller than image size, otherwise will always cross boundary
-    min_shape = min(original_shape)
+    min_shape = min(original_shape[:2])
     max_multiplier = float(2 ** (num_scales - 1))
     base_shape = min_shape * total_overlap_rate / max_multiplier
 

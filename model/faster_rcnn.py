@@ -2,6 +2,7 @@ import tensorflow as tf
 
 from .roi import ROIAlign
 from .rpn import RegionProposalNetwork, NonMaxSuppressionAnchorFilter
+from .utils import sample_many
 
 
 class FasterRCNN(tf.keras.Model):
@@ -91,7 +92,7 @@ class FasterRCNN(tf.keras.Model):
 
         self.anchor_non_max_suppression_filter = NonMaxSuppressionAnchorFilter(self.non_max_suppression_iou_threshold)
 
-    @tf.function
+    # @tf.function
     def call_supervised(self, inputs, training, scores):
         return self(inputs, training, scores)
 
@@ -105,63 +106,52 @@ class FasterRCNN(tf.keras.Model):
         # extract features using cnn, if fine-tune then pass training argument,
         # otherwise always false (because of batch normalization adjustment in eager execution)
         context_features = self.cnn(inputs, training=training)
+        scene_features = self.gap(context_features)
 
         # run Region Proposal Network with first filtering of the cross-boundary filter
-        rpn_predictions, rpn_rois, anchors, image_assignments = self.rpn(context_features, training=training)
+        rpn_predictions, rpn_rois, rpn_anchors, rpn_ia = self.rpn(context_features, training=training)
 
         scores = rpn_predictions if scores is None else scores
 
         # filter according to the scores (removing overlapping anchors)
-        rpn_predictions, rpn_rois, anchors, image_assignments = \
-            self.anchor_non_max_suppression_filter.filter(rpn_rois, scores, image_assignments,
-                                                          self.image_size,
-                                                          [rpn_predictions, rpn_rois, anchors, image_assignments])
-        positive_predictions = tf.squeeze(tf.where(scores >= self.detection_upper_threshold), 1)
+        rpn_active_anchors = tf.range(0, tf.shape(scores)[0])
+        rpn_predictions, rpn_rois, rpn_anchors, rpn_ia, rpn_active_anchors, scores = \
+            self.anchor_non_max_suppression_filter.filter(
+                rpn_rois, scores, rpn_ia, self.image_size,
+                [rpn_predictions, rpn_rois, rpn_anchors, rpn_ia, rpn_active_anchors, scores])
+        positive_samples = tf.squeeze(tf.where(scores >= self.detection_upper_threshold), 1)
 
         # after RPN we need only positive detections
-        rpn_predictions = tf.gather(rpn_predictions, positive_predictions)
-        rpn_rois = tf.gather(rpn_rois, positive_predictions)
-        anchors = tf.gather(anchors, positive_predictions)
-        image_assignments = tf.gather(image_assignments, positive_predictions)
+        frcnn_rois, frcnn_anchors, frcnn_ia, frcnn_active_anchors = \
+            sample_many(positive_samples, rpn_rois, rpn_anchors, rpn_ia, rpn_active_anchors)
 
         # normalize rois to have in range between [0,1]
         h, w, _ = self.image_size
-        norm_rois = rpn_rois / tf.convert_to_tensor([[h, w, h, w]], tf.float32)
+        norm_rois = frcnn_rois / tf.convert_to_tensor([[h, w, h, w]], tf.float32)
 
         # run roi align to extract object_features
         # size (example) [rois, 7, 7, X]]
-        object_features = self.roi(context_features, norm_rois, box_indices=image_assignments)
+        object_features = self.roi(context_features, norm_rois, box_indices=frcnn_ia)
         object_features = self.gap(object_features)
 
         # run final features extraction and predict classes and rois
         features = self.extractor(object_features, training=training)
         frcnn_predictions = self.predict_class(features)
         frcnn_rois_refinements = self.predict_roi(features)
-        frcnn_rois = frcnn_rois_refinements + rpn_rois
+        frcnn_rois = frcnn_rois_refinements + frcnn_rois
 
         # calculate visual representation for each object if necessary
-        context_features = self.gap(context_features)
-        context_features = tf.gather(context_features, image_assignments)
-        visual_representations = tf.concat([context_features, object_features], -1)
+        object_features = tf.concat([
+            tf.gather(scene_features, frcnn_ia),
+            object_features
+        ], -1)
 
-        rpn_output = (rpn_predictions, rpn_rois)
-        frcnn_output = (frcnn_predictions, frcnn_rois)
+        frcnn_result = (frcnn_predictions, frcnn_rois, frcnn_anchors, frcnn_ia)
+        rpn_result = (rpn_predictions, rpn_rois, rpn_anchors, rpn_ia)
+        features = (scene_features, object_features)
+        active_anchors = (frcnn_active_anchors, rpn_active_anchors)
 
-        return {
-            'rpn_outputs': rpn_output,
-            'frcnn_outputs': frcnn_output,
-            'anchors': anchors,
-            'visual_representations': visual_representations,
-            'image_assignments': image_assignments
-        }
-
-    def get_anchors(self, batch_size, image_size):
-        # be careful! these anchors need to be initialized in the same way as anchors inside rpn
-        # it regards also to filtering!
-        anchors = tf.tile(self.rpn.anchors, [batch_size, 1])
-        anchors_active = self.rpn.anchor_cross_boundary_filter(anchors, image_size)
-        anchors = tf.gather(anchors, anchors_active)
-        return anchors
+        return frcnn_result, rpn_result, features, active_anchors
 
     @staticmethod
     def std_spec(num_classes, fine_tune=False):
