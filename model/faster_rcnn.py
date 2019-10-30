@@ -213,7 +213,7 @@ class FasterRCNN(tf.keras.Model):
         return model_loss, frcnn_accuracy, rpn_accuracy
 
     @staticmethod
-    def std_spec(num_classes, fine_tune=False):
+    def std_spec(num_classes):
         return {
             'num_classes': num_classes,
             'frcnn_features': 512,
@@ -226,7 +226,6 @@ class FasterRCNN(tf.keras.Model):
             'roi_align_samples': 2,
             'detection_upper_threshold': 0.7,
             'detection_lower_threshold': 0.3,
-            'fine_tune_features_extraction': fine_tune
         }
 
     @staticmethod
