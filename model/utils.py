@@ -104,12 +104,9 @@ def _get_object_presence(gt_num_objects):
     object is really on image and which is padded one.
     :return indicator tensor, which says whether object is real (1) or padded (0)
     """
-    num_objects = gt_num_objects.numpy()
-    max_num_objects = max(num_objects)
-    object_presence = []
-    for n in num_objects:
-        object_presence.append(tf.concat([tf.ones([n]), tf.zeros([max_num_objects - n])], 0))
-    return tf.concat(object_presence, 0)
+    max_num = tf.reduce_max(gt_num_objects)
+    obj_presence = tf.map_fn(lambda x: tf.cast(tf.range(max_num) < x, tf.int32), gt_num_objects)
+    return tf.cast(tf.reshape(obj_presence, [-1]), tf.float32)
 
 
 def get_gt_data(anchors, gt_object_bbox, gt_label, gt_num_objects, score_threshold=0.7):
@@ -171,10 +168,11 @@ def get_gt_data(anchors, gt_object_bbox, gt_label, gt_num_objects, score_thresho
     return gt_object_bbox, gt_label, scores
 
 
-def rpn_sample(scores, *tensors, upper_threshold=0.7, lower_threshold=0.3, num_positive=256, num_negative=256):
+def rpn_sample(results, gt, upper_threshold=0.7, lower_threshold=0.3, num_positive=256, num_negative=256):
     """
     Prepares a sampler which returns given number of positive and negative (randomly sampled with returning) examples
     """
+    scores = gt[-1]
 
     # as positive we take only those with score >= 0.7, for negative <= 0.3 and the rest is ignored
     positive = tf.squeeze(tf.where(scores >= upper_threshold), 1)
@@ -182,16 +180,19 @@ def rpn_sample(scores, *tensors, upper_threshold=0.7, lower_threshold=0.3, num_p
 
     # from positive indices sample (with returning) num_positive samples
     # to the same for negative
-    positive_idx = tf.random.uniform([num_positive], 0, tf.shape(positive)[0].numpy(), tf.int32)
-    negative_idx = tf.random.uniform([num_negative], 0, tf.shape(negative)[0].numpy(), tf.int32)
+    positive_idx = tf.random.uniform([num_positive], 0, tf.shape(positive)[0], tf.int32)
+    negative_idx = tf.random.uniform([num_negative], 0, tf.shape(negative)[0], tf.int32)
     positive_idx = tf.gather(positive, positive_idx)
     negative_idx = tf.gather(negative, negative_idx)
 
     # sample both positive and negative
-    positive_batch = sample_many(positive_idx, *tensors)
-    negative_batch = sample_many(negative_idx, *tensors)
+    positive_batch_results = sample_many(positive_idx, *results)
+    positive_batch_gt = sample_many(positive_idx, *gt)
 
-    return positive_batch, negative_batch
+    negative_batch_results = sample_many(negative_idx, *results)
+    negative_batch_gt = sample_many(negative_idx, *gt)
+
+    return positive_batch_results, positive_batch_gt, negative_batch_results, negative_batch_gt
 
 
 def sample_many(indices, *tensors):

@@ -1,8 +1,7 @@
-import tensorflow as tf
-
+from .losses import frcnn_loss, rpn_loss, detection_loss
 from .roi import ROIAlign
 from .rpn import RegionProposalNetwork, NonMaxSuppressionAnchorFilter
-from .utils import sample_many
+from .utils import *
 
 
 class FasterRCNN(tf.keras.Model):
@@ -92,14 +91,6 @@ class FasterRCNN(tf.keras.Model):
 
         self.anchor_non_max_suppression_filter = NonMaxSuppressionAnchorFilter(self.non_max_suppression_iou_threshold)
 
-    # @tf.function
-    def call_supervised(self, inputs, training, scores):
-        return self(inputs, training, scores)
-
-    @tf.function
-    def call_unsupervised(self, inputs, training):
-        return self(inputs, training)
-
     def call(self, inputs, training=False, scores=None):
         # get a shape of the input image
 
@@ -152,6 +143,74 @@ class FasterRCNN(tf.keras.Model):
         active_anchors = (frcnn_active_anchors, rpn_active_anchors)
 
         return frcnn_result, rpn_result, features, active_anchors
+
+    @tf.function
+    def call_supervised(self, inputs, training, scores):
+        return self(inputs, training, scores)
+
+    @tf.function
+    def call_unsupervised(self, inputs, training):
+        return self(inputs, training)
+
+    @tf.function
+    def train_step(self, optimizer, images, object_bbox, object_label, num_objects):
+        with tf.GradientTape() as tape:
+            anchors = tf.tile(self.rpn.anchors_filtered, [tf.shape(images)[0], 1])
+            gt_data = get_gt_data(anchors, object_bbox, object_label, num_objects, self.detection_upper_threshold)
+
+            frcnn_result, rpn_result, features, active_anchors = self(images, True, gt_data[-1])
+
+            frcnn_gt = sample_many(active_anchors[0], *gt_data)
+            rpn_gt = sample_many(active_anchors[1], *gt_data)
+
+            rpn_p_results, rpn_p_gt, rpn_n_results, rpn_n_gt = rpn_sample(rpn_result, rpn_gt)
+
+            frcnn_l = frcnn_loss(frcnn_result, frcnn_gt)
+            rpn_p_l = rpn_loss(rpn_p_results, rpn_p_gt)
+            rpn_n_l = detection_loss(rpn_n_results[0], False)
+
+            model_loss = frcnn_l + rpn_p_l + rpn_n_l
+
+        grads = tape.gradient(model_loss, self.trainable_variables)
+        optimizer.apply_gradients(zip(grads, self.trainable_variables))
+
+        frcnn_accuracy = tf.keras.metrics.sparse_categorical_accuracy(frcnn_gt[1], frcnn_result[0])
+        frcnn_accuracy = tf.reduce_mean(frcnn_accuracy)
+        rpn_accuracy = tf.keras.metrics.binary_accuracy(
+            tf.concat([tf.ones_like(rpn_p_results[0]), tf.zeros_like(rpn_n_results[0])], 0),
+            tf.concat([rpn_p_results[0], rpn_n_results[0]], 0)
+        )
+        rpn_accuracy = tf.reduce_mean(rpn_accuracy)
+
+        return model_loss, frcnn_accuracy, rpn_accuracy
+
+    @tf.function
+    def val_step(self, images, object_bbox, object_label, num_objects):
+        anchors = tf.tile(self.rpn.anchors_filtered, [tf.shape(images)[0], 1])
+        gt_data = get_gt_data(anchors, object_bbox, object_label, num_objects, self.detection_upper_threshold)
+
+        frcnn_result, rpn_result, features, active_anchors = self(images, False, gt_data[-1])
+
+        frcnn_gt = sample_many(active_anchors[0], *gt_data)
+        rpn_gt = sample_many(active_anchors[1], *gt_data)
+
+        rpn_p_results, rpn_p_gt, rpn_n_results, rpn_n_gt = rpn_sample(rpn_result, rpn_gt)
+
+        frcnn_l = frcnn_loss(frcnn_result, frcnn_gt)
+        rpn_p_l = rpn_loss(rpn_p_results, rpn_p_gt)
+        rpn_n_l = detection_loss(rpn_n_results[0], False)
+
+        model_loss = frcnn_l + rpn_p_l + rpn_n_l
+
+        frcnn_accuracy = tf.keras.metrics.sparse_categorical_accuracy(frcnn_gt[1], frcnn_result[0])
+        frcnn_accuracy = tf.reduce_mean(frcnn_accuracy)
+        rpn_accuracy = tf.keras.metrics.binary_accuracy(
+            tf.concat([tf.ones_like(rpn_p_results[0]), tf.zeros_like(rpn_n_results[0])], 0),
+            tf.concat([rpn_p_results[0], rpn_n_results[0]], 0)
+        )
+        rpn_accuracy = tf.reduce_mean(rpn_accuracy)
+
+        return model_loss, frcnn_accuracy, rpn_accuracy
 
     @staticmethod
     def std_spec(num_classes, fine_tune=False):
