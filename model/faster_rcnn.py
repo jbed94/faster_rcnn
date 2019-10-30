@@ -32,13 +32,10 @@ class FasterRCNN(tf.keras.Model):
                  anchor_num_scales=3,
                  total_anchor_overlap_rate=0.9,
                  non_max_suppression_iou_threshold=0.7,
-                 filter_cross_boundary=True,
                  roi_align_output_size=(7, 7),
                  roi_align_samples=2,
                  detection_upper_threshold=0.7,
-                 detection_lower_threshold=0.3,
-                 image_size=None,
-                 *args, **kwargs):
+                 image_size=None):
         """
         :param num_classes: number of classes for classification detections,
         :param frcnn_features: convolution size made on output of ROI Align before final prediction
@@ -52,7 +49,7 @@ class FasterRCNN(tf.keras.Model):
         :param detection_upper_threshold: threshold for detecting object (made on scores)
         :param detection_lower_threshold: threshold for detecting not-object (made on scores)
         """
-        super().__init__(*args, **kwargs)
+        super().__init__()
 
         self.num_classes = num_classes
         self.frcnn_features = frcnn_features
@@ -60,9 +57,7 @@ class FasterRCNN(tf.keras.Model):
         self.anchor_num_scales = anchor_num_scales
         self.total_anchor_overlap_rate = total_anchor_overlap_rate
         self.non_max_suppression_iou_threshold = non_max_suppression_iou_threshold
-        self.filter_cross_boundary = filter_cross_boundary
         self.detection_upper_threshold = detection_upper_threshold
-        self.detection_lower_threshold = detection_lower_threshold
         self.image_size = image_size
 
         # features extraction network
@@ -215,7 +210,7 @@ class FasterRCNN(tf.keras.Model):
         return model_loss, frcnn_accuracy, rpn_accuracy, model_result
 
     @staticmethod
-    def std_spec(num_classes):
+    def std_spec(num_classes, image_size):
         return {
             'num_classes': num_classes,
             'frcnn_features': 512,
@@ -223,11 +218,10 @@ class FasterRCNN(tf.keras.Model):
             'anchor_num_scales': 3,
             'total_anchor_overlap_rate': 0.9,
             'non_max_suppression_iou_threshold': 0.4,
-            'filter_cross_boundary': True,
             'roi_align_output_size': (7, 7),
             'roi_align_samples': 2,
             'detection_upper_threshold': 0.7,
-            'detection_lower_threshold': 0.3,
+            'image_size': image_size
         }
 
     @staticmethod
@@ -239,10 +233,8 @@ class FasterRCNN(tf.keras.Model):
             'anchor_num_scales': 3,
             'total_anchor_overlap_rate': 0.9,
             'non_max_suppression_iou_threshold': 0.4,
-            'filter_cross_boundary': False,
             'roi_align_output_size': (7, 7),
             'roi_align_samples': 2,
             'detection_upper_threshold': 0.7,
-            'detection_lower_threshold': 0.3,
-            'input_shape': [320, 480, 3]
+            'image_size': [None, 320, 480, 3]
         }
