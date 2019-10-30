@@ -181,8 +181,9 @@ class FasterRCNN(tf.keras.Model):
             tf.concat([rpn_p_results[0], rpn_n_results[0]], 0)
         )
         rpn_accuracy = tf.reduce_mean(rpn_accuracy)
+        model_result = frcnn_result, rpn_result, features
 
-        return model_loss, frcnn_accuracy, rpn_accuracy
+        return model_loss, frcnn_accuracy, rpn_accuracy, model_result
 
     @tf.function
     def val_step(self, images, object_bbox, object_label, num_objects):
@@ -209,8 +210,9 @@ class FasterRCNN(tf.keras.Model):
             tf.concat([rpn_p_results[0], rpn_n_results[0]], 0)
         )
         rpn_accuracy = tf.reduce_mean(rpn_accuracy)
+        model_result = frcnn_result, rpn_result, features
 
-        return model_loss, frcnn_accuracy, rpn_accuracy
+        return model_loss, frcnn_accuracy, rpn_accuracy, model_result
 
     @staticmethod
     def std_spec(num_classes):
