@@ -236,5 +236,5 @@ class FasterRCNN(tf.keras.Model):
             'roi_align_output_size': (7, 7),
             'roi_align_samples': 2,
             'detection_upper_threshold': 0.7,
-            'image_size': [None, 320, 480, 3]
+            'image_size': [320, 480, 3]
         }
