@@ -35,7 +35,8 @@ class FasterRCNN(tf.keras.Model):
                  roi_align_output_size=(7, 7),
                  roi_align_samples=2,
                  detection_upper_threshold=0.7,
-                 image_size=None):
+                 image_size=None,
+                 optimizer=None):
         """
         :param num_classes: number of classes for classification detections,
         :param frcnn_features: convolution size made on output of ROI Align before final prediction
@@ -51,6 +52,7 @@ class FasterRCNN(tf.keras.Model):
         """
         super().__init__()
 
+        self.optimizer = optimizer
         self.num_classes = num_classes
         self.frcnn_features = frcnn_features
         self.rpn_features = rpn_features
@@ -147,8 +149,13 @@ class FasterRCNN(tf.keras.Model):
     def call_unsupervised(self, inputs, training):
         return self(inputs, training)
 
-    @tf.function
-    def train_step(self, optimizer, images, object_bbox, object_label, num_objects):
+    @tf.function(input_signature=[
+        tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32),
+        tf.TensorSpec(shape=[None, None, 4], dtype=tf.float32),
+        tf.TensorSpec(shape=[None, None], dtype=tf.int64),
+        tf.TensorSpec(shape=[None], dtype=tf.int32)
+    ])
+    def train_step(self, images, object_bbox, object_label, num_objects):
         with tf.GradientTape() as tape:
             anchors = tf.tile(self.rpn.anchors_filtered, [tf.shape(images)[0], 1])
             gt_data = get_gt_data(anchors, object_bbox, object_label, num_objects, self.detection_upper_threshold)
@@ -167,7 +174,7 @@ class FasterRCNN(tf.keras.Model):
             model_loss = frcnn_l + rpn_p_l + rpn_n_l
 
         grads = tape.gradient(model_loss, self.trainable_variables)
-        optimizer.apply_gradients(zip(grads, self.trainable_variables))
+        self.optimizer.apply_gradients(zip(grads, self.trainable_variables))
 
         frcnn_accuracy = tf.keras.metrics.sparse_categorical_accuracy(frcnn_gt[1], frcnn_result[0])
         frcnn_accuracy = tf.reduce_mean(frcnn_accuracy)
