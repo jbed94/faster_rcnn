@@ -160,7 +160,7 @@ class FasterRCNN(tf.keras.Model):
             anchors = tf.tile(self.rpn.anchors_filtered, [tf.shape(images)[0], 1])
             gt_data = get_gt_data(anchors, object_bbox, object_label, num_objects, self.detection_upper_threshold)
 
-            frcnn_result, rpn_result, features, active_anchors = self(images, True, gt_data[-1])
+            frcnn_result, rpn_result, features, active_anchors = self(images, training=True, scores=gt_data[-1])
 
             frcnn_gt = sample_many(active_anchors[0], *gt_data)
             rpn_gt = sample_many(active_anchors[1], *gt_data)
@@ -197,7 +197,7 @@ class FasterRCNN(tf.keras.Model):
         anchors = tf.tile(self.rpn.anchors_filtered, [tf.shape(images)[0], 1])
         gt_data = get_gt_data(anchors, object_bbox, object_label, num_objects, self.detection_upper_threshold)
 
-        frcnn_result, rpn_result, features, active_anchors = self(images, False, gt_data[-1])
+        frcnn_result, rpn_result, features, active_anchors = self(images, training=False, scores=gt_data[-1])
 
         frcnn_gt = sample_many(active_anchors[0], *gt_data)
         rpn_gt = sample_many(active_anchors[1], *gt_data)
