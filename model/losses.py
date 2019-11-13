@@ -14,7 +14,7 @@ def rpn_loss(results, gt, rate=100):
     gt_bbox: [N, 4] (because it is nearest gt for each anchor)
     gt_detection: [N]
     """
-    predictions, rois, anchors, _ = results
+    predictions, rois, anchors, _, _ = results
     gt_bbox, _, _ = gt
 
     d_loss = detection_loss(predictions, True)

@@ -106,7 +106,8 @@ class FasterRCNN(tf.keras.Model):
             self.anchor_non_max_suppression_filter.filter(
                 rpn_rois, scores, rpn_ia, self.image_size,
                 [rpn_predictions, rpn_rois, rpn_anchors, rpn_ia, rpn_active_anchors, scores])
-        positive_samples = tf.squeeze(tf.where(scores >= self.detection_upper_threshold), 1)
+        rpn_positive = scores >= self.detection_upper_threshold
+        positive_samples = tf.squeeze(tf.where(rpn_positive), 1)
 
         # after RPN we need only positive detections
         frcnn_rois, frcnn_anchors, frcnn_ia, frcnn_active_anchors = \
@@ -133,8 +134,9 @@ class FasterRCNN(tf.keras.Model):
             object_features
         ], -1)
 
+        # todo: return in more convenient way (?dict?)
         frcnn_result = (frcnn_predictions, frcnn_rois, frcnn_anchors, frcnn_ia)
-        rpn_result = (rpn_predictions, rpn_rois, rpn_anchors, rpn_ia)
+        rpn_result = (rpn_predictions, rpn_rois, rpn_anchors, rpn_ia, rpn_positive)
         features = (scene_features, object_features)
         active_anchors = (frcnn_active_anchors, rpn_active_anchors)
 
