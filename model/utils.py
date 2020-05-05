@@ -105,7 +105,7 @@ def _get_object_presence(gt_num_objects):
     :return indicator tensor, which says whether object is real (1) or padded (0)
     """
     max_num = tf.reduce_max(gt_num_objects)
-    obj_presence = tf.map_fn(lambda x: tf.cast(tf.range(max_num) < x, tf.int32), gt_num_objects)
+    obj_presence = tf.map_fn(lambda x: tf.cast(tf.range(max_num) < x, tf.int64), gt_num_objects)
     return tf.cast(tf.reshape(obj_presence, [-1]), tf.float32)
 
 

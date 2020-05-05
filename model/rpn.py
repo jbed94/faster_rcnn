@@ -89,8 +89,8 @@ class RegionProposalNetwork(tf.keras.Model):
 
         # run filtering / cropping
         anchors_active = self.anchor_cross_boundary_filter(anchors, self.image_size)
-        predictions, rois, anchors, image_assignments = \
-            sample_many(anchors_active, predictions, rois, anchors, image_assignments)
+        predictions, rois, anchors, image_assignments = sample_many(anchors_active, predictions, rois, anchors,
+                                                                    image_assignments)
 
         return predictions, rois, anchors, image_assignments
 
