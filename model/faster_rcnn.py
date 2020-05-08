@@ -193,7 +193,7 @@ class FasterRCNN(tf.keras.Model):
         #     tf.TensorSpec(shape=[None, None], dtype=tf.int64),
         #     tf.TensorSpec(shape=[None], dtype=tf.int32)
         # ])
-        def val_step(self, images, object_bbox, object_label, num_objects):
+        def val_step(images, object_bbox, object_label, num_objects):
             anchors = tf.tile(self.rpn.anchors_filtered, [tf.shape(images)[0], 1])
             gt_data = get_gt_data(anchors, object_bbox, object_label, num_objects, self.detection_upper_threshold)
 
