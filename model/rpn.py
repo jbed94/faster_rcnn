@@ -69,7 +69,7 @@ class RegionProposalNetwork(tf.keras.Model):
         # get batch size for tile fo anchors and image assignments
         batch_size = tf.shape(inputs)[0]
 
-        # run features extraction and output conv consisting of 5 filters (1 for classification and 4 for bbox)
+        # run features extraction and output grid consisting of 5 filters (1 for classification and 4 for bbox)
         features = self.extractor(inputs, training=training)
 
         # get detection (1 vals - logical regression), and bbox (4 vals)
