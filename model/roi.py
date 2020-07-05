@@ -24,10 +24,7 @@ class ROIAlign(tf.keras.layers.Layer):
             (self.samples_rate, self.samples_rate), (self.samples_rate, self.samples_rate))
 
     # noinspection PyMethodOverriding
-    def call(self, inputs, boxes, box_indices=None, **kwargs):
-        if box_indices is None:
-            box_indices = tf.zeros([tf.shape(boxes)[0]], tf.int32)
-
+    def call(self, inputs, boxes, box_indices, **kwargs):
         boxes = center_point_to_coordnates(boxes)
 
         # calculate bin width and height
@@ -49,7 +46,7 @@ class ROIAlign(tf.keras.layers.Layer):
         # type summary number of samples in height and width
         crop_size = tf.constant([self.output_size[0] * self.samples_rate, self.output_size[1] * self.samples_rate])
 
-        # box_indices should be all zeros
+        # box_indices should be range (0, batch_size)
         sampled = tf.image.crop_and_resize(inputs, new_boxes, box_indices=box_indices, crop_size=crop_size,
                                            method='bilinear')
 
