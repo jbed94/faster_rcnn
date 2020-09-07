@@ -109,14 +109,13 @@ def _get_object_presence(gt_num_objects):
     return tf.cast(tf.reshape(obj_presence, [-1]), tf.float32)
 
 
-def get_gt_data(anchors, gt_object_bbox, gt_label, gt_num_objects, score_threshold=0.7):
+def get_gt_data(anchors, gt_object_bbox, gt_label, gt_num_objects):
     """
     Helper function which assigns ground truth data to each detected anchor.
     :param anchors: [None, 4] - detected anchors at the image,
     :param gt_object_bbox: [None, max_gt, 4] - ground truth bounding boxes of the objects,
     :param gt_label: [None, max_gt] - ground truth labels of the objects,
     :param gt_num_objects: number of objects (ground truth) in each example in batch,
-    :param score_threshold: then to say that anchor (according to the IoU) contains object or not.
     :return: ground truth data (bbox, object label, detection, scores) for each input anchor
     """
     # get some constant values like batch size, number of anchors for each input image

@@ -146,16 +146,16 @@ class FasterRCNN(tf.keras.Model):
         return self(inputs, training)
 
     def train_step_func(self, optimizer):
-        # @tf.function(input_signature=[
-        #     tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32),
-        #     tf.TensorSpec(shape=[None, None, 4], dtype=tf.float32),
-        #     tf.TensorSpec(shape=[None, None], dtype=tf.int64),
-        #     tf.TensorSpec(shape=[None], dtype=tf.int32)
-        # ])
+        @tf.function(input_signature=[
+            tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32),
+            tf.TensorSpec(shape=[None, None, 4], dtype=tf.float32),
+            tf.TensorSpec(shape=[None, None], dtype=tf.int64),
+            tf.TensorSpec(shape=[None], dtype=tf.int64)
+        ])
         def train_step(images, object_bbox, object_label, num_objects):
             with tf.GradientTape() as tape:
                 anchors = tf.tile(self.rpn.anchors_filtered, [tf.shape(images)[0], 1])
-                gt_data = get_gt_data(anchors, object_bbox, object_label, num_objects, self.detection_upper_threshold)
+                gt_data = get_gt_data(anchors, object_bbox, object_label, num_objects)
 
                 frcnn_result, rpn_result, features, active_anchors = self(images, training=True, scores=gt_data[-1])
 
@@ -187,15 +187,15 @@ class FasterRCNN(tf.keras.Model):
         return train_step
 
     def val_step_func(self):
-        # @tf.function(input_signature=[
-        #     tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32),
-        #     tf.TensorSpec(shape=[None, None, 4], dtype=tf.float32),
-        #     tf.TensorSpec(shape=[None, None], dtype=tf.int64),
-        #     tf.TensorSpec(shape=[None], dtype=tf.int32)
-        # ])
+        @tf.function(input_signature=[
+            tf.TensorSpec(shape=[None, None, None, 3], dtype=tf.float32),
+            tf.TensorSpec(shape=[None, None, 4], dtype=tf.float32),
+            tf.TensorSpec(shape=[None, None], dtype=tf.int64),
+            tf.TensorSpec(shape=[None], dtype=tf.int64)
+        ])
         def val_step(images, object_bbox, object_label, num_objects):
             anchors = tf.tile(self.rpn.anchors_filtered, [tf.shape(images)[0], 1])
-            gt_data = get_gt_data(anchors, object_bbox, object_label, num_objects, self.detection_upper_threshold)
+            gt_data = get_gt_data(anchors, object_bbox, object_label, num_objects)
 
             frcnn_result, rpn_result, features, active_anchors = self(images, training=False, scores=gt_data[-1])
 
