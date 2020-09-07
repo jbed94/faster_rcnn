@@ -10,7 +10,7 @@ class ROIAlign(tf.keras.layers.Layer):
     1. we need to define what is an intended output size (f.e. 7x7 for each roi,
     2. construct "bins" (e.g. 7x7) from rois,
     3. calculate width and height of the bin,
-    4. decide how many "samples" do we want to have in each bin (f.e. 2x2, 4x4, etc) - it's regular grid inside bin
+    4. decide how many "samples" do we want to have in each bin (f.e. 2x2, 4x4, etc) - it's regular knowledge inside bin
     5. calculate most top-left and right-bottom samples' coordinates
     6. run bilinear sampling with intended output size equal to summary number of samples in height and width
     7. for each bin run max pooling (or any other pooling method), so in fact kernel = samples per bin, stride = samples
