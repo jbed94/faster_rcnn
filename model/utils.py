@@ -111,12 +111,12 @@ def _get_object_presence(gt_num_objects):
 
 def get_gt_data(anchors, gt_object_bbox, gt_label, gt_num_objects):
     """
-    Helper function which assigns ground truth data to each detected anchor.
+    Helper function which assigns ground truth datasets to each detected anchor.
     :param anchors: [None, 4] - detected anchors at the image,
     :param gt_object_bbox: [None, max_gt, 4] - ground truth bounding boxes of the objects,
     :param gt_label: [None, max_gt] - ground truth labels of the objects,
     :param gt_num_objects: number of objects (ground truth) in each example in batch,
-    :return: ground truth data (bbox, object label, detection, scores) for each input anchor
+    :return: ground truth datasets (bbox, object label, detection, scores) for each input anchor
     """
     # get some constant values like batch size, number of anchors for each input image
     batch_size = tf.shape(gt_object_bbox)[0]
@@ -124,7 +124,7 @@ def get_gt_data(anchors, gt_object_bbox, gt_label, gt_num_objects):
 
     # we assume, that each image in batch may have different number of anchors (f.e. if different anchors filtering
     # will be executed, at the beginning), so we need to calculate all sparse indices to "active" detected objects
-    # and ground truth data (we pad both GROUND TRUTH and DETECTED ANCHORS)
+    # and ground truth datasets (we pad both GROUND TRUTH and DETECTED ANCHORS)
     object_presence = _get_object_presence(gt_num_objects)
 
     # calculate iou between all anchors and gt (also between padded ones !!!)
