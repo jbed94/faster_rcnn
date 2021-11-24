@@ -4,7 +4,7 @@ import tensorflow_datasets as tfds
 import src
 
 num_epochs = 35
-batch_size = 32
+batch_size = 4
 num_classes = 20
 target_size = (256, 256, 3)
 anchor_base = 32
@@ -38,8 +38,8 @@ epoch_rpn_accuracy, epoch_frcnn_accuracy = tf.metrics.Mean(), tf.metrics.Mean()
 
 
 def reset_state():
-    epoch_rpn_accuracy.reset_state()
-    epoch_frcnn_accuracy.reset_state()
+    epoch_rpn_accuracy.reset_states()
+    epoch_frcnn_accuracy.reset_states()
 
 
 def update_state(rpn_accuracy, frcnn_accuracy):
