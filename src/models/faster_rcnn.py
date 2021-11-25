@@ -35,24 +35,24 @@ class FasterRCNN(tf.keras.Model):
         images_features = self.cnn(inputs, training=training)
 
         # run region proposal network
-        rpn_predictions, rpn_rois, rpn_anchors, rpn_assignments = self.rpn(images_features, training=training, filter_outbound=filter_outbound)
+        rpn_predictions, rpn_rois, rpn_anchors = self.rpn(images_features, training=training, filter_outbound=filter_outbound)
 
         # decide if use external detector (e.g. during training) or simply take detection results
         if detector is not None:
-            indices = detector(rpn_predictions, rpn_rois, rpn_anchors, rpn_assignments)
+            indices = detector(rpn_predictions, rpn_rois, rpn_anchors)
         else:
-            indices = tf.where(rpn_predictions > self.detection_threshold)
+            indices = tf.where(tf.squeeze(rpn_predictions, -1) > self.detection_threshold)
 
         # get only positive anchors (with rois and predictions)
         predictions = tf.gather_nd(rpn_predictions, indices)
         rois = tf.gather_nd(rpn_rois, indices)
         anchors = tf.gather_nd(rpn_anchors, indices)
-        assignments = tf.gather_nd(rpn_assignments, indices)
+        assignments = indices[:, 0]
 
         # HACK:
         # batch non_max_suppression for batch processing (simply shift anchors according to assignment)
         anchors_shifted = center_point_to_coordinates(anchors) + tf.cast(assignments[:, tf.newaxis], tf.float32) * boxes_norm
-        selected = tf.image.non_max_suppression(anchors_shifted, tf.nn.sigmoid(predictions), tf.shape(anchors_shifted)[0], 0.7)
+        selected = tf.image.non_max_suppression(anchors_shifted, tf.squeeze(tf.nn.sigmoid(predictions), -1), tf.shape(anchors_shifted)[0], 0.7)
 
         # get positive anchors and rois (without predictions!)
         rois = tf.gather(rois, selected)
@@ -72,8 +72,7 @@ class FasterRCNN(tf.keras.Model):
             'rpn': {
                 'predictions': rpn_predictions,
                 'rois': rpn_rois,
-                'anchors': rpn_anchors,
-                'assignments': rpn_assignments
+                'anchors': rpn_anchors
             },
             'frcnn': {
                 'predictions': predictions,
@@ -87,8 +86,7 @@ class FasterRCNN(tf.keras.Model):
 def frcnn_match(boxes, anchors, assignments):
     boxes = tf.gather(boxes, assignments)
     iou = boxes_iou(boxes, anchors[:, tf.newaxis])
-    # todo: check if there is proper assignments matching
-    return tf.stack([assignments, tf.argmax(iou, -1, output_type=tf.int32)], 1)
+    return tf.stack([assignments, tf.argmax(iou, -1)], 1)
 
 
 def frcnn_step(boxes, labels, predictions, rois, anchors, assignments):
@@ -113,20 +111,19 @@ def frcnn_step(boxes, labels, predictions, rois, anchors, assignments):
 def prepare_query_and_train(frcnn, optimizer, num_samples):
     def inference(images, boxes, num_boxes, labels, training):
         # define external detector for taking positive anchors
-        def detector(predictions, rois, anchors, assignments):
-            mask = tf.sequence_mask(tf.gather(num_boxes, assignments))
-            iou = boxes_iou(tf.gather(boxes, assignments), anchors[:, tf.newaxis])
-            best_anchors = tf.reduce_max(tf.ragged.stack_dynamic_partitions(iou, assignments, tf.reduce_max(assignments) + 1), 1)
-            best = tf.reduce_any((iou == tf.gather(best_anchors, assignments)) & mask, -1)
-            highest = tf.reduce_max(iou, 1) > 0.7
-            return tf.where(best | highest)
+        def detector(predictions, rois, anchors):
+            mask = tf.sequence_mask(num_boxes)
+            iou = boxes_iou(boxes[:, :, tf.newaxis], anchors[:, tf.newaxis])
+            max_anchor = tf.reduce_max(iou, 1, keepdims=True)
+            max_box = tf.reduce_max(iou, 2, keepdims=True)
+            positive = tf.reduce_any((max_anchor == max_box) & mask[..., tf.newaxis], 1) | (tf.squeeze(max_anchor, 1) > 0.7)
+            return tf.where(positive)
 
         # run faster r-cnn
         output = frcnn(images, training, detector)
 
         # rpn and frcnn train steps
-        _rpn_loss, _rpn_accuracy = rpn_step(boxes, num_boxes, output['rpn']['predictions'], output['rpn']['rois'], output['rpn']['anchors'], output['rpn']['assignments'],
-                                            num_samples)
+        _rpn_loss, _rpn_accuracy = rpn_step(boxes, num_boxes, output['rpn']['predictions'], output['rpn']['rois'], output['rpn']['anchors'], num_samples)
         _frcnn_loss, _frcnn_accuracy = frcnn_step(boxes, labels, output['frcnn']['predictions'], output['frcnn']['rois'], output['frcnn']['anchors'],
                                                   output['frcnn']['assignments'])
 
@@ -135,12 +132,12 @@ def prepare_query_and_train(frcnn, optimizer, num_samples):
 
         return output, (total_loss, _rpn_accuracy, _frcnn_accuracy)
 
-    # @tf.function(input_signature=(
-    #         tf.TensorSpec([None, None, None, 3], tf.float32),
-    #         tf.TensorSpec([None, None, 4], tf.float32),
-    #         tf.TensorSpec([None], tf.int32),
-    #         tf.TensorSpec([None, None], tf.int64)
-    # ))
+    @tf.function(input_signature=(
+            tf.TensorSpec([None, None, None, 3], tf.float32),
+            tf.TensorSpec([None, None, 4], tf.float32),
+            tf.TensorSpec([None], tf.int32),
+            tf.TensorSpec([None, None], tf.int64)
+    ))
     def train(images, boxes, num_boxes, labels):
         with tf.GradientTape() as tape:
             frcnn_outputs, (loss, rpn_accuracy, frcnn_accuracy) = inference(images, boxes, num_boxes, labels, True)
@@ -151,12 +148,12 @@ def prepare_query_and_train(frcnn, optimizer, num_samples):
 
         return frcnn_outputs, (loss, rpn_accuracy, frcnn_accuracy)
 
-    # @tf.function(input_signature=(
-    #         tf.TensorSpec([None, None, None, 3], tf.float32),
-    #         tf.TensorSpec([None, None, 4], tf.float32),
-    #         tf.TensorSpec([None], tf.int32),
-    #         tf.TensorSpec([None, None], tf.int64)
-    # ))
+    @tf.function(input_signature=(
+            tf.TensorSpec([None, None, None, 3], tf.float32),
+            tf.TensorSpec([None, None, 4], tf.float32),
+            tf.TensorSpec([None], tf.int32),
+            tf.TensorSpec([None, None], tf.int64)
+    ))
     def query(images, boxes, num_boxes, labels):
         return inference(images, boxes, num_boxes, labels, False)
 

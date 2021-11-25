@@ -2,16 +2,17 @@ import tensorflow as tf
 import tensorflow_datasets as tfds
 
 import src
+from src.utils.execution import timeit
 
 num_epochs = 35
-batch_size = 4
+batch_size = 32
 num_classes = 20
 target_size = (256, 256, 3)
 anchor_base = 32
 num_samples = 32
 momentum = 0.8
 dropout = 0.5
-learning_rate = 1e-4
+learning_rate = 5e-4
 
 (voc_train, voc_val), voc_info = tfds.load(
     'voc/2007',
@@ -47,17 +48,27 @@ def update_state(rpn_accuracy, frcnn_accuracy):
     epoch_frcnn_accuracy.update_state(frcnn_accuracy)
 
 
-for epoch in range(num_epochs):
+@timeit
+@tf.function
+def train_epoch():
     reset_state()
     for data in voc_train:
         outputs, (loss, rpn_accuracy, frcnn_accuracy) = train(data['image'], data['boxes'], data['num_objects'], data['labels'])
         update_state(rpn_accuracy, frcnn_accuracy)
 
-    print(f'Train epoch: {epoch} | RPN Accuracy: {epoch_rpn_accuracy.result()} | FRCNN Accuracy: {epoch_frcnn_accuracy.result()}')
 
+@timeit
+@tf.function
+def val_epoch():
     reset_state()
     for data in voc_val:
         outputs, (loss, rpn_accuracy, frcnn_accuracy) = query(data['image'], data['boxes'], data['num_objects'], data['labels'])
         update_state(rpn_accuracy, frcnn_accuracy)
 
+
+for epoch in range(num_epochs):
+    train_epoch()
+    print(f'Train epoch: {epoch} | RPN Accuracy: {epoch_rpn_accuracy.result()} | FRCNN Accuracy: {epoch_frcnn_accuracy.result()}')
+
+    val_epoch()
     print(f'Validation epoch: {epoch} | RPN Accuracy: {epoch_rpn_accuracy.result()} | FRCNN Accuracy: {epoch_frcnn_accuracy.result()}')
